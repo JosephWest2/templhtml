@@ -7,47 +7,59 @@
 #define DIRECTORY_LENGTH 256
 #define MAX_FILE_ENTRIES 2048
 #define FILE_NAME_LENGTH 128
+#define MIN(v1, v2) v1 < v2 ? v1 : v2
+#define ARRAY_LENGTH(array) sizeof(array) / sizeof(array[0])
 
 typedef struct {
     char path[DIRECTORY_LENGTH];
     char fileName[FILE_NAME_LENGTH];
 } FileEntry;
 
-int GetHTMLFiles(FileEntry *fileEntries, DIR *dir, char *dirName, int *i, regex_t *htmlRegex) {
+typedef struct {
+
+    FileEntry *parentFile;
+    char innerValue[256];
+    size_t iStart;
+    size_t iEnd;
+
+} Match;
+
+int GetHTMLFiles(FileEntry *fileEntries, size_t maxFileEntries, DIR *dir, char *dirName, size_t *fileCount, regex_t *htmlFileRegex) {
 
     int success = 0;
     int regexResult;
-    struct dirent *dirent;
+    struct dirent *directoryEntry;
 
-    while ((dirent = readdir(dir)) != NULL) {
-        regexResult = regexec(htmlRegex, dirent->d_name, 0, NULL, 0);
+    while ((directoryEntry = readdir(dir)) != NULL) {
+        regexResult = regexec(htmlFileRegex, directoryEntry->d_name, 0, NULL, 0);
         if (regexResult == 0) {
-            printf("dirent: %s\n", dirent->d_name);
-            if (*i >= MAX_FILE_ENTRIES) {
+            printf("dirent: %s\n", directoryEntry->d_name);
+            if (*fileCount >= maxFileEntries) {
                 printf("exceeded max dirents\n");
                 return -1;
             }
-            strlcpy(fileEntries[*i].fileName, dirent->d_name, FILE_NAME_LENGTH);
-            strlcpy(fileEntries[*i].path, dirName, DIRECTORY_LENGTH);
-            strlcat(fileEntries[*i].path, "/", DIRECTORY_LENGTH);
-            strlcat(fileEntries[*i].path, dirent->d_name, DIRECTORY_LENGTH);
-            (*i)++;
+            strlcpy(fileEntries[*fileCount].fileName, directoryEntry->d_name, FILE_NAME_LENGTH);
+            strlcpy(fileEntries[*fileCount].path, dirName, DIRECTORY_LENGTH);
+            strlcat(fileEntries[*fileCount].path, "/", DIRECTORY_LENGTH);
+            strlcat(fileEntries[*fileCount].path, directoryEntry->d_name, DIRECTORY_LENGTH);
+            (*fileCount)++;
 
-        } else if (dirent->d_type == DT_DIR && strcmp(dirent->d_name, ".") != 0 && strcmp(dirent->d_name, "..") != 0 && strlen(dirent->d_name) > 0 && dirent->d_name[0] != '.') {
-            printf("directory: %s\n", dirent->d_name);
+        } else if (directoryEntry->d_type == DT_DIR && strcmp(directoryEntry->d_name, ".") != 0 && strcmp(directoryEntry->d_name, "..") != 0 && strlen(directoryEntry->d_name) > 0 &&
+                   directoryEntry->d_name[0] != '.') {
+            printf("directory: %s\n", directoryEntry->d_name);
 
-            char *subdirectory = malloc(strlen(dirent->d_name) + strlen(dirName) + 1);
-            strcpy(subdirectory, dirName);
-            strcat(subdirectory, "/");
-            strcat(subdirectory, dirent->d_name);
+            char *subdirectoryName = malloc(strlen(directoryEntry->d_name) + strlen(dirName) + 1);
+            strcpy(subdirectoryName, dirName);
+            strcat(subdirectoryName, "/");
+            strcat(subdirectoryName, directoryEntry->d_name);
 
-            DIR *subdir = opendir(subdirectory);
-            if (subdir == NULL) {
-                printf("Directory %s not found\n", subdirectory);
+            DIR *subDIR = opendir(subdirectoryName);
+            if (subDIR == NULL) {
+                printf("Directory %s not found\n", subdirectoryName);
                 return -1;
             }
 
-            success = GetHTMLFiles(fileEntries, subdir, subdirectory, i, htmlRegex);
+            success = GetHTMLFiles(fileEntries, maxFileEntries, subDIR, subdirectoryName, fileCount, htmlFileRegex);
         }
     }
     return success;
@@ -80,9 +92,9 @@ int main(int argc, char **argv) {
     }
 
     FileEntry htmlFileEntries[MAX_FILE_ENTRIES];
-    int htmlFileCount = 0;
+    size_t htmlFileCount = 0;
 
-    res = GetHTMLFiles(htmlFileEntries, dir, directory, &htmlFileCount, &htmlRegex);
+    res = GetHTMLFiles(htmlFileEntries, ARRAY_LENGTH(htmlFileEntries), dir, directory, &htmlFileCount, &htmlRegex);
     if (res == -1) {
         printf("Error at GetHTMLFiles\n");
         return -1;
@@ -102,30 +114,55 @@ int main(int argc, char **argv) {
         printf("test failed for htmlInsertRegex\n");
     }
 
-    for (int i = 0; i < htmlFileCount; i++) {
+    Match matches[1024];
+    size_t matchCount = 0;
+
+    for (size_t i = 0; i < htmlFileCount; i++) {
         printf("fileEntry: fileName: %s path: %s\n", htmlFileEntries[i].fileName, htmlFileEntries[i].path);
-        const FileEntry *const entry = &htmlFileEntries[i];
+        FileEntry *const currentFileEntry = &htmlFileEntries[i];
 
-        regmatch_t matches[256];
-
-        FILE *file = fopen(entry->path, "r");
+        FILE *file = fopen(currentFileEntry->path, "r");
         if (file == NULL) {
-            printf("Unable to open file %s\n", entry->path);
+            printf("Unable to open file %s\n", currentFileEntry->path);
             return -1;
         }
 
         char line[1024];
+        size_t lineIndex = 0;
 
-        while ((fgets(line, 60, file)) != NULL) {
-            regmatch_t _matches[128];
-            res = regexec(&htmlInsertRegex, line, 128, _matches, 0);
-            if (res == 0) {
-                printf("%s\n", line);
-                printf("match\n");
-            } else {
-                printf("%s\n", line);
-                printf("no match\n");
+        while ((fgets(line, sizeof(line), file)) != NULL) {
+
+            regmatch_t match[1];
+            size_t lastMatchEndIndex = 0;
+            while ((regexec(&htmlInsertRegex, line + lastMatchEndIndex, ARRAY_LENGTH(match), match, 0) == 0)) {
+
+                Match *currentMatch = &matches[matchCount];
+                currentMatch->parentFile = currentFileEntry;
+                printf("match at %zu -> %zu: %s\n", match[0].rm_so + lastMatchEndIndex + lineIndex, match[0].rm_eo + lastMatchEndIndex + lineIndex, line);
+                currentMatch->iStart = match[0].rm_so + lastMatchEndIndex + lineIndex;
+                currentMatch->iEnd = match[0].rm_eo + lastMatchEndIndex + lineIndex;
+                size_t innerValueLength = MIN(match[0].rm_eo - match[0].rm_so - 4, sizeof(currentMatch->innerValue));
+                printf("innerValueLength %zu\n", innerValueLength);
+                memcpy(currentMatch->innerValue, line + lastMatchEndIndex + match[0].rm_so + 2, innerValueLength);
+                currentMatch->innerValue[innerValueLength] = '\0';
+
+                if ((strcmp(currentMatch->innerValue, currentFileEntry->fileName)) == 0) {
+                    printf("Recursive inclusion found at %s\n", currentFileEntry->fileName);
+                    return -1;
+                }
+
+                lastMatchEndIndex += match[0].rm_eo;
+                matchCount++;
             }
+            printf("no more matches found on line %s\n", line);
+            lineIndex += strlen(line);
         }
+    }
+
+    for (size_t i = 0; i < matchCount; i++) {
+        printf("%zu %zu %s\n", matches[i].iStart, matches[i].iEnd, matches[i].innerValue);
+
+
+
     }
 }
