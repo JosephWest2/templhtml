@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #define DIRECTORY_LENGTH 256
 #define MAX_FILE_ENTRIES 2048
@@ -10,25 +11,25 @@
 #define MIN(v1, v2) v1 < v2 ? v1 : v2
 #define ARRAY_LENGTH(array) sizeof(array) / sizeof(array[0])
 
-typedef struct {
-    char path[DIRECTORY_LENGTH];
-    char fileName[FILE_NAME_LENGTH];
-} FileEntry;
-
-typedef struct {
-
-    FileEntry *parentFile;
-    char innerValue[256];
+typedef struct Match {
+    char innerValue[64];
     size_t iStart;
     size_t iEnd;
-
 } Match;
+
+typedef struct {
+    char path[256];
+    char fileName[64];
+    Match matches[32];
+    size_t matchCount;
+} FileEntry;
 
 int GetHTMLFiles(FileEntry *fileEntries, size_t maxFileEntries, DIR *dir, char *dirName, size_t *fileCount, regex_t *htmlFileRegex) {
 
     int success = 0;
     int regexResult;
     struct dirent *directoryEntry;
+    printf("YO\n");
 
     while ((directoryEntry = readdir(dir)) != NULL) {
         regexResult = regexec(htmlFileRegex, directoryEntry->d_name, 0, NULL, 0);
@@ -49,9 +50,13 @@ int GetHTMLFiles(FileEntry *fileEntries, size_t maxFileEntries, DIR *dir, char *
             printf("directory: %s\n", directoryEntry->d_name);
 
             char *subdirectoryName = malloc(strlen(directoryEntry->d_name) + strlen(dirName) + 1);
-            strcpy(subdirectoryName, dirName);
-            strcat(subdirectoryName, "/");
-            strcat(subdirectoryName, directoryEntry->d_name);
+            if (strcmp(dirName, ".")) {
+                strcpy(subdirectoryName, dirName);
+                strcat(subdirectoryName, "/");
+                strcat(subdirectoryName, directoryEntry->d_name);
+            } else {
+                strcpy(subdirectoryName, directoryEntry->d_name);
+            }
 
             DIR *subDIR = opendir(subdirectoryName);
             if (subDIR == NULL) {
@@ -62,6 +67,78 @@ int GetHTMLFiles(FileEntry *fileEntries, size_t maxFileEntries, DIR *dir, char *
             success = GetHTMLFiles(fileEntries, maxFileEntries, subDIR, subdirectoryName, fileCount, htmlFileRegex);
         }
     }
+    return success;
+}
+
+int CreateFilePath(char *path) {
+
+    char buffer[256];
+    size_t bufferIndex = 0;
+    size_t len = strlen(path);
+    for (size_t i = 0; i < len; i++) {
+
+        char c = path[i];
+        if (c == '/' || c == '\\') {
+            buffer[bufferIndex] = '\0';
+            mkdir(buffer, 0700);
+            bufferIndex = 0;
+            continue;
+        }
+
+        buffer[bufferIndex] = path[i];
+        bufferIndex++;
+    }
+    return 0;
+}
+
+int BuildOutputFile(FileEntry *htmlFileEntries, size_t htmlFileCount, size_t i, size_t *visitedIndexes, size_t visitedIndexesLength) {
+
+    int success = 0;
+
+    FileEntry fileEntry = htmlFileEntries[i];
+
+    char buildFilePath[256] = "./build/";
+    strlcat(buildFilePath, fileEntry.path, ARRAY_LENGTH(buildFilePath));
+    FILE *buildFile = fopen(buildFilePath, "w");
+    if (buildFile == NULL) {
+        printf("failed to create file %s\n", buildFilePath);
+        return -1;
+    }
+    FILE *sourceFile = fopen(fileEntry.path, "r");
+    if (sourceFile == NULL) {
+        printf("failed to open source file %s\n", fileEntry.path);
+        return -1;
+    }
+
+    long l = ftell(sourceFile);
+    Match *currentMatch = &fileEntry.matches[0];
+
+    while (l >= 0 && l != currentMatch->iStart) {
+
+        char c = fgetc(sourceFile);
+        fputc(c, buildFile);
+    }
+    if (l >= 0 && l == currentMatch->iStart) {
+        int found = 0;
+        for (size_t j = 0; j < htmlFileCount; j++) {
+            if (strcmp(currentMatch->innerValue, htmlFileEntries[j].fileName) == 0) {
+                found = 1;
+                int result = BuildOutputFile(htmlFileEntries, htmlFileCount, j, visitedIndexes, visitedIndexesLength);
+                if (result == -1) {
+                    printf("error at build output file\n");
+                    return -1;
+                }
+                break;
+            }
+        }
+        if (!found) {
+            printf("file inclusion '%s' not found\n", currentMatch->innerValue);
+        } else {
+            char inclusionPath[256] = "./build/";
+            // FILE *inclusionFile = fopen(
+        }
+    }
+
     return success;
 }
 
@@ -114,9 +191,6 @@ int main(int argc, char **argv) {
         printf("test failed for htmlInsertRegex\n");
     }
 
-    Match matches[1024];
-    size_t matchCount = 0;
-
     for (size_t i = 0; i < htmlFileCount; i++) {
         printf("fileEntry: fileName: %s path: %s\n", htmlFileEntries[i].fileName, htmlFileEntries[i].path);
         FileEntry *const currentFileEntry = &htmlFileEntries[i];
@@ -136,8 +210,7 @@ int main(int argc, char **argv) {
             size_t lastMatchEndIndex = 0;
             while ((regexec(&htmlInsertRegex, line + lastMatchEndIndex, ARRAY_LENGTH(match), match, 0) == 0)) {
 
-                Match *currentMatch = &matches[matchCount];
-                currentMatch->parentFile = currentFileEntry;
+                Match *currentMatch = &currentFileEntry->matches[currentFileEntry->matchCount];
                 printf("match at %zu -> %zu: %s\n", match[0].rm_so + lastMatchEndIndex + lineIndex, match[0].rm_eo + lastMatchEndIndex + lineIndex, line);
                 currentMatch->iStart = match[0].rm_so + lastMatchEndIndex + lineIndex;
                 currentMatch->iEnd = match[0].rm_eo + lastMatchEndIndex + lineIndex;
@@ -152,17 +225,15 @@ int main(int argc, char **argv) {
                 }
 
                 lastMatchEndIndex += match[0].rm_eo;
-                matchCount++;
+                currentFileEntry->matchCount++;
             }
             printf("no more matches found on line %s\n", line);
             lineIndex += strlen(line);
         }
     }
 
-    for (size_t i = 0; i < matchCount; i++) {
-        printf("%zu %zu %s\n", matches[i].iStart, matches[i].iEnd, matches[i].innerValue);
+    size_t visitedIndexes[256];
+    size_t visitedIndexesLength = 0;
 
-
-
-    }
+    // BuildOutputFile(htmlFileEntries, htmlFileCount, 0, visitedIndexes, visitedIndexesLength);
 }
