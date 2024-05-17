@@ -51,6 +51,7 @@ int GetHTMLFiles(FileEntry *fileEntries, size_t maxFileEntries, DIR *dir, char *
                 strlcpy(fileEntries[*fileCount].path, directoryEntry->d_name, DIRECTORY_LENGTH);
             }
             fileEntries[*fileCount].built = false;
+            fileEntries[*fileCount].inclusionCount++;
             (*fileCount)++;
 
         } else if (directoryEntry->d_type == DT_DIR && strcmp(directoryEntry->d_name, ".") != 0 && strcmp(directoryEntry->d_name, "..") != 0 && strlen(directoryEntry->d_name) > 0 &&
@@ -101,6 +102,7 @@ int CreateFilePath(char *path) {
 
 int PasteFile(FileEntry *fileEntry, FILE *dest) {
 
+    printf("PASTING\n");
     char srcPath[128] = "build/";
     strcat(srcPath, fileEntry->path);
     FILE *src = fopen(srcPath, "r");
@@ -118,12 +120,13 @@ int BuildOutputFile(FileEntry *htmlFileEntries, size_t htmlFileCount, size_t htm
     // Init pointers and build necessary directories
     FileEntry *fileEntry = &htmlFileEntries[htmlFileIndex];
     FILE *sourceFile = fopen(fileEntry->path, "r");
-    CreateFilePath(fileEntry->path);
     char destinationPath[128] = "build/";
     strcat(destinationPath, fileEntry->path);
+    CreateFilePath(destinationPath);
     FILE *outputFile = fopen(destinationPath, "w");
     if (outputFile == NULL || sourceFile == NULL) {
         printf("error at BuildOutputFile\n");
+        return -1;
     }
 
     // Build Dependencies if not built
@@ -137,23 +140,26 @@ int BuildOutputFile(FileEntry *htmlFileEntries, size_t htmlFileCount, size_t htm
 
     // Build the build file
     size_t currentInclusionIndex = 0;
+    printf("currentInclusionIndex: %ld, fileInclusionCount: %ld\n", currentInclusionIndex, fileEntry->inclusionCount);
     FileInclusion *currentInclusion = &fileEntry->inclusions[currentInclusionIndex];
 
     while (true) {
 
         long l = ftell(sourceFile);
+        printf("%ld : %ld\n", l, currentInclusion->iStart);
 
         if (currentInclusionIndex < fileEntry->inclusionCount && l == currentInclusion->iStart) {
+
+            printf("FOUND\n");
 
             // Find associated File Entry
             FileEntry *inclusionEntry = NULL;
             for (int i = 0; i < htmlFileCount; i++) {
-
+                printf("inclusionInnerValue %s, fileName %s\n", currentInclusion->innerValue, htmlFileEntries[i].fileName);
                 if (htmlFileEntries[i].fileName == currentInclusion->innerValue) {
                     inclusionEntry = &htmlFileEntries[i];
                 }
             }
-            inclusionEntry = NULL;
             assert(inclusionEntry != NULL);
 
             // Paste in the file
@@ -167,8 +173,9 @@ int BuildOutputFile(FileEntry *htmlFileEntries, size_t htmlFileCount, size_t htm
         }
 
         char c = fgetc(sourceFile);
-        if (c == EOF)
+        if (c == EOF) {
             return 0;
+        }
         fputc(c, outputFile);
     }
 }
@@ -225,6 +232,8 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < htmlFileCount; i++) {
         printf("fileEntry: fileName: %s path: %s\n", htmlFileEntries[i].fileName, htmlFileEntries[i].path);
         FileEntry *const currentFileEntry = &htmlFileEntries[i];
+        currentFileEntry->inclusionCount = 0;
+        currentFileEntry->built = false;
 
         FILE *file = fopen(currentFileEntry->path, "r");
         if (file == NULL) {
@@ -242,13 +251,14 @@ int main(int argc, char **argv) {
             while ((regexec(&htmlInsertRegex, line + lastMatchEndIndex, ARRAY_LENGTH(match), match, 0) == 0)) {
 
                 FileInclusion *currentMatch = &currentFileEntry->inclusions[currentFileEntry->inclusionCount];
-                printf("match at %zu -> %zu: %s\n", match[0].rm_so + lastMatchEndIndex + lineIndex, match[0].rm_eo + lastMatchEndIndex + lineIndex, line);
                 currentMatch->iStart = match[0].rm_so + lastMatchEndIndex + lineIndex;
                 currentMatch->iEnd = match[0].rm_eo + lastMatchEndIndex + lineIndex;
+                printf("match at %zu -> %zu: %s\n", currentMatch->iStart, currentMatch->iEnd, line);
                 size_t innerValueLength = MIN(match[0].rm_eo - match[0].rm_so - 4, sizeof(currentMatch->innerValue));
                 printf("innerValueLength %zu\n", innerValueLength);
                 memcpy(currentMatch->innerValue, line + lastMatchEndIndex + match[0].rm_so + 2, innerValueLength);
                 currentMatch->innerValue[innerValueLength] = '\0';
+                printf("CURRENTMATCH: %s\n", currentMatch->innerValue);
 
                 if ((strcmp(currentMatch->innerValue, currentFileEntry->fileName)) == 0) {
                     printf("Recursive inclusion found at %s\n", currentFileEntry->fileName);
@@ -268,4 +278,6 @@ int main(int argc, char **argv) {
     size_t htmlFileIndex = 0;
 
     BuildOutputFile(htmlFileEntries, htmlFileCount, htmlFileIndex);
+
+    return 0;
 }
