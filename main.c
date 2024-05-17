@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <regex.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,17 +12,18 @@
 #define MIN(v1, v2) v1 < v2 ? v1 : v2
 #define ARRAY_LENGTH(array) sizeof(array) / sizeof(array[0])
 
-typedef struct Match {
+typedef struct FileInclusion {
     char innerValue[64];
     size_t iStart;
     size_t iEnd;
-} Match;
+} FileInclusion;
 
-typedef struct {
+typedef struct FileEntry {
     char path[256];
     char fileName[64];
-    Match matches[32];
-    size_t matchCount;
+    FileInclusion inclusions[32];
+    size_t inclusionCount;
+    bool built;
 } FileEntry;
 
 int GetHTMLFiles(FileEntry *fileEntries, size_t maxFileEntries, DIR *dir, char *dirName, size_t *fileCount, regex_t *htmlFileRegex) {
@@ -40,9 +42,14 @@ int GetHTMLFiles(FileEntry *fileEntries, size_t maxFileEntries, DIR *dir, char *
                 return -1;
             }
             strlcpy(fileEntries[*fileCount].fileName, directoryEntry->d_name, FILE_NAME_LENGTH);
-            strlcpy(fileEntries[*fileCount].path, dirName, DIRECTORY_LENGTH);
-            strlcat(fileEntries[*fileCount].path, "/", DIRECTORY_LENGTH);
-            strlcat(fileEntries[*fileCount].path, directoryEntry->d_name, DIRECTORY_LENGTH);
+            if (strcmp(dirName, ".")) {
+                strlcpy(fileEntries[*fileCount].path, dirName, DIRECTORY_LENGTH);
+                strlcat(fileEntries[*fileCount].path, "/", DIRECTORY_LENGTH);
+                strlcat(fileEntries[*fileCount].path, directoryEntry->d_name, DIRECTORY_LENGTH);
+            } else {
+                strlcpy(fileEntries[*fileCount].path, directoryEntry->d_name, DIRECTORY_LENGTH);
+            }
+            fileEntries[*fileCount].built = false;
             (*fileCount)++;
 
         } else if (directoryEntry->d_type == DT_DIR && strcmp(directoryEntry->d_name, ".") != 0 && strcmp(directoryEntry->d_name, "..") != 0 && strlen(directoryEntry->d_name) > 0 &&
@@ -91,55 +98,73 @@ int CreateFilePath(char *path) {
     return 0;
 }
 
-int BuildOutputFile(FileEntry *htmlFileEntries, size_t htmlFileCount, size_t i, size_t *visitedIndexes, size_t visitedIndexesLength) {
+int PasteFile(FileEntry * fileEntry, FILE * dest) {
 
-    int success = 0;
-
-    FileEntry fileEntry = htmlFileEntries[i];
-
-    char buildFilePath[256] = "./build/";
-    strlcat(buildFilePath, fileEntry.path, ARRAY_LENGTH(buildFilePath));
-    FILE *buildFile = fopen(buildFilePath, "w");
-    if (buildFile == NULL) {
-        printf("failed to create file %s\n", buildFilePath);
-        return -1;
-    }
-    FILE *sourceFile = fopen(fileEntry.path, "r");
-    if (sourceFile == NULL) {
-        printf("failed to open source file %s\n", fileEntry.path);
-        return -1;
+    FILE* src = fopen(fileEntry->path);
+    if (src == NULL) {
+        printf("cannot open file at PasteFile %s\n", fileEntry->path);
     }
 
-    long l = ftell(sourceFile);
-    Match *currentMatch = &fileEntry.matches[0];
+    fputc(
 
-    while (l >= 0 && l != currentMatch->iStart) {
 
-        char c = fgetc(sourceFile);
-        fputc(c, buildFile);
+}
+
+int BuildOutputFile(FileEntry *htmlFileEntries, size_t htmlFileCount, size_t htmlFileIndex) {
+
+    // Init pointers and build necessary directories
+    FileEntry *fileEntry = &htmlFileEntries[htmlFileIndex];
+    FILE *sourceFile = fopen(fileEntry->path, "r");
+    CreateFilePath(fileEntry->path);
+    char destinationPath[128] = "build/";
+    strcat(destinationPath, fileEntry->path);
+    FILE *outputFile = fopen(destinationPath, "w");
+    if (outputFile == NULL || sourceFile == NULL) {
+        printf("error at BuildOutputFile");
     }
-    if (l >= 0 && l == currentMatch->iStart) {
-        int found = 0;
-        for (size_t j = 0; j < htmlFileCount; j++) {
-            if (strcmp(currentMatch->innerValue, htmlFileEntries[j].fileName) == 0) {
-                found = 1;
-                int result = BuildOutputFile(htmlFileEntries, htmlFileCount, j, visitedIndexes, visitedIndexesLength);
-                if (result == -1) {
-                    printf("error at build output file\n");
-                    return -1;
-                }
-                break;
+
+    // Build Dependencies if not built
+    for (int i = 0; i < fileEntry->inclusionCount; i++) {
+        for (int j = 0; j < htmlFileCount; j++) {
+            if (fileEntry->inclusions[i].innerValue == htmlFileEntries[j].fileName && !htmlFileEntries[j].built) {
+                BuildOutputFile(htmlFileEntries, htmlFileCount, j);
             }
         }
-        if (!found) {
-            printf("file inclusion '%s' not found\n", currentMatch->innerValue);
-        } else {
-            char inclusionPath[256] = "./build/";
-            // FILE *inclusionFile = fopen(
-        }
     }
 
-    return success;
+    //Build the build file
+    size_t currentInclusionIndex = 0;
+    FileInclusion *currentInclusion = &fileEntry->inclusions[currentInclusionIndex];
+
+    while (true) {
+
+        long l = ftell(sourceFile);
+        if (l == currentInclusion->iStart) {
+
+            
+            // Find associated File Entry
+            FileEntry * inclusionEntry = NULL;
+            for (int i = 0; i < htmlFileCount; i++) {
+
+                if (htmlFileEntries[i].fileName == currentInclusion->innerValue) {
+                    inclusionEntry = &htmlFileEntries[i];
+                }
+            }
+            if (inclusionEntry == NULL) {
+                return -1;
+            }
+
+            // Paste in the file
+            PasteFile(
+
+
+        }
+
+    }
+
+
+
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -178,13 +203,13 @@ int main(int argc, char **argv) {
     }
 
     regex_t htmlInsertRegex;
-    res = regcomp(&htmlInsertRegex, "{{[a-z._A-Z0-9]*}}", 0);
+    res = regcomp(&htmlInsertRegex, "{{[ a-z._A-Z0-9]*}}", 0);
     if (res != 0) {
         printf("htmlInsertRegex compilation failed\n");
         return -1;
     }
 
-    res = regexec(&htmlInsertRegex, "al{{bbb0b}}skdf{{jk999asdfjkha}}afdslka", 0, NULL, 0);
+    res = regexec(&htmlInsertRegex, "al{{ bbb0b }}skdf{{jk999asdfjkha}}afdslka", 0, NULL, 0);
     if (res == 0) {
         printf("test pass for htmlinsertregex\n");
     } else {
@@ -210,7 +235,7 @@ int main(int argc, char **argv) {
             size_t lastMatchEndIndex = 0;
             while ((regexec(&htmlInsertRegex, line + lastMatchEndIndex, ARRAY_LENGTH(match), match, 0) == 0)) {
 
-                Match *currentMatch = &currentFileEntry->matches[currentFileEntry->matchCount];
+                FileInclusion *currentMatch = &currentFileEntry->inclusions[currentFileEntry->inclusionCount];
                 printf("match at %zu -> %zu: %s\n", match[0].rm_so + lastMatchEndIndex + lineIndex, match[0].rm_eo + lastMatchEndIndex + lineIndex, line);
                 currentMatch->iStart = match[0].rm_so + lastMatchEndIndex + lineIndex;
                 currentMatch->iEnd = match[0].rm_eo + lastMatchEndIndex + lineIndex;
@@ -225,7 +250,7 @@ int main(int argc, char **argv) {
                 }
 
                 lastMatchEndIndex += match[0].rm_eo;
-                currentFileEntry->matchCount++;
+                currentFileEntry->inclusionCount++;
             }
             printf("no more matches found on line %s\n", line);
             lineIndex += strlen(line);
@@ -234,6 +259,7 @@ int main(int argc, char **argv) {
 
     size_t visitedIndexes[256];
     size_t visitedIndexesLength = 0;
+    size_t htmlFileIndex = 0;
 
-    // BuildOutputFile(htmlFileEntries, htmlFileCount, 0, visitedIndexes, visitedIndexesLength);
+    BuildOutputFile(htmlFileEntries, htmlFileCount, htmlFileIndex, visitedIndexes, visitedIndexesLength);
 }
