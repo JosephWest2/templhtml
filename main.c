@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <dirent.h>
 #include <regex.h>
 #include <stdbool.h>
@@ -98,16 +99,18 @@ int CreateFilePath(char *path) {
     return 0;
 }
 
-int PasteFile(FileEntry * fileEntry, FILE * dest) {
+int PasteFile(FileEntry *fileEntry, FILE *dest) {
 
-    FILE* src = fopen(fileEntry->path);
-    if (src == NULL) {
-        printf("cannot open file at PasteFile %s\n", fileEntry->path);
+    char srcPath[128] = "build/";
+    strcat(srcPath, fileEntry->path);
+    FILE *src = fopen(srcPath, "r");
+    assert(src != NULL);
+
+    char c;
+    while ((c = fgetc(src)) != EOF) {
+        fputc(c, dest);
     }
-
-    fputc(
-
-
+    return 0;
 }
 
 int BuildOutputFile(FileEntry *htmlFileEntries, size_t htmlFileCount, size_t htmlFileIndex) {
@@ -120,7 +123,7 @@ int BuildOutputFile(FileEntry *htmlFileEntries, size_t htmlFileCount, size_t htm
     strcat(destinationPath, fileEntry->path);
     FILE *outputFile = fopen(destinationPath, "w");
     if (outputFile == NULL || sourceFile == NULL) {
-        printf("error at BuildOutputFile");
+        printf("error at BuildOutputFile\n");
     }
 
     // Build Dependencies if not built
@@ -132,39 +135,42 @@ int BuildOutputFile(FileEntry *htmlFileEntries, size_t htmlFileCount, size_t htm
         }
     }
 
-    //Build the build file
+    // Build the build file
     size_t currentInclusionIndex = 0;
     FileInclusion *currentInclusion = &fileEntry->inclusions[currentInclusionIndex];
 
     while (true) {
 
         long l = ftell(sourceFile);
-        if (l == currentInclusion->iStart) {
 
-            
+        if (currentInclusionIndex < fileEntry->inclusionCount && l == currentInclusion->iStart) {
+
             // Find associated File Entry
-            FileEntry * inclusionEntry = NULL;
+            FileEntry *inclusionEntry = NULL;
             for (int i = 0; i < htmlFileCount; i++) {
 
                 if (htmlFileEntries[i].fileName == currentInclusion->innerValue) {
                     inclusionEntry = &htmlFileEntries[i];
                 }
             }
-            if (inclusionEntry == NULL) {
-                return -1;
-            }
+            inclusionEntry = NULL;
+            assert(inclusionEntry != NULL);
 
             // Paste in the file
-            PasteFile(
+            PasteFile(inclusionEntry, outputFile);
 
-
+            // move pointer to after the inclusion
+            fseek(sourceFile, currentInclusion->iEnd - currentInclusion->iStart, l);
+            currentInclusionIndex++;
+            currentInclusion = &fileEntry->inclusions[currentInclusionIndex];
+            continue;
         }
 
+        char c = fgetc(sourceFile);
+        if (c == EOF)
+            return 0;
+        fputc(c, outputFile);
     }
-
-
-
-    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -261,5 +267,5 @@ int main(int argc, char **argv) {
     size_t visitedIndexesLength = 0;
     size_t htmlFileIndex = 0;
 
-    BuildOutputFile(htmlFileEntries, htmlFileCount, htmlFileIndex, visitedIndexes, visitedIndexesLength);
+    BuildOutputFile(htmlFileEntries, htmlFileCount, htmlFileIndex);
 }
