@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <regex.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -13,11 +14,11 @@ int main(int argc, char **argv) {
 
     char directory[DIRECTORY_LENGTH] = ".";
 
-    if (argc != 0) {
-        if (strlen(argv[0]) < DIRECTORY_LENGTH) {
-            strcpy(argv[0], directory);
+    if (argc >= 2) {
+        if (strlen(argv[1]) < DIRECTORY_LENGTH) {
+            strcpy(directory, argv[1]);
         } else {
-            memcpy(directory, argv[0], DIRECTORY_LENGTH - 2);
+            memcpy(directory, argv[1], DIRECTORY_LENGTH - 2);
             directory[DIRECTORY_LENGTH - 1] = '\0';
         }
     }
@@ -29,6 +30,7 @@ int main(int argc, char **argv) {
     assert(res == true);
 
     BuildOutput(&htmlEntries);
+    printf("build complete at '%s'\n", directory);
 
     return 0;
 }

@@ -8,6 +8,8 @@ static void _Grow(ArrayList *arr) {
 
 void ArrayList_Destroy(ArrayList *arr) {
     free(arr->buffer);
+    arr->count = 0;
+    arr->bufferLength = 0;
 }
 
 void ArrayList_CreateAndClone(const ArrayList *const src, ArrayList *dest) {
@@ -19,7 +21,7 @@ void ArrayList_CreateAndClone(const ArrayList *const src, ArrayList *dest) {
 
 void ArrayList_Create(ArrayList *arr, size_t initialSize) {
     arr->count = 0;
-    arr->bufferLength = 10;
+    arr->bufferLength = initialSize;
     arr->buffer = malloc(sizeof(size_t) * arr->bufferLength);
 }
 

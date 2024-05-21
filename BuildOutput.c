@@ -15,18 +15,14 @@ static void _GetBuildPath(const char *const srcPath, char *out) {
 
 static void _BuildDirectory(const char *const path) {
     char buffer[256];
-    size_t bufferIndex = 0;
     size_t len = strlen(path);
     for (size_t i = 0; i < len; i++) {
         char c = path[i];
         if (c == '/' || c == '\\') {
-            buffer[bufferIndex] = '\0';
+            buffer[i] = '\0';
             mkdir(buffer, 0700);
-            bufferIndex = 0;
-            continue;
         }
-        buffer[bufferIndex] = path[i];
-        bufferIndex++;
+        buffer[i] = path[i];
     }
 }
 static char *_TrimWhitespace(char *s) {
@@ -49,23 +45,19 @@ static char *_TrimWhitespace(char *s) {
             return start;
         }
     }
-    *end = '\0';
+    *(end + 1) = '\0';
     return start;
 }
 
 static void _BuildFile(htmlEntries *entries, htmlEntry *entry, ArrayList *parents, const regex_t *const htmlInclusionRegex) {
 
-    printf("funcCall: %s\n", entry->path);
-
     FILE *srcFile = fopen(entry->path, "r");
-    printf("path: %s\n", entry->path);
     assert(srcFile != NULL);
 
     char destPath[128];
     _GetBuildPath(entry->path, destPath);
     _BuildDirectory(destPath);
     FILE *destFile = fopen(destPath, "w");
-    printf("destPath: %s\n", destPath);
     assert(destFile != NULL);
 
     char line[1024];
@@ -76,54 +68,49 @@ static void _BuildFile(htmlEntries *entries, htmlEntry *entry, ArrayList *parent
         regmatch_t match[1];
         while ((regexec(htmlInclusionRegex, p, ARRAY_LENGTH(match), match, 0) == 0)) {
 
-            ArrayList *newParents;
-            ArrayList_CreateAndClone(parents, newParents);
-            ArrayList_Append(newParents, entry->id);
+            ArrayList newParents;
+            ArrayList_CreateAndClone(parents, &newParents);
+            ArrayList_Append(&newParents, entry->id);
 
             line[match[0].rm_so] = '\0';
-            line[match[0].rm_eo - 1] = '\0';
+            line[match[0].rm_eo - 2] = '\0';
             fputs(p, destFile);
             p += match[0].rm_eo;
 
             char fileName[64];
             strcpy(fileName, line + match[0].rm_so + 2);
             char *fileNameTrimmed = _TrimWhitespace(fileName);
-            printf("fileName %s\n", fileName);
 
             htmlEntry *inclusion = GetAssociatedHtmlEntry(entries, fileNameTrimmed);
             if (inclusion == NULL) {
-                printf("file %s not found\n", fileNameTrimmed);
-                ArrayList_Destroy(newParents);
+                printf("file {%s} not found\n", fileNameTrimmed);
+                ArrayList_Destroy(&newParents);
                 continue;
             }
-            if (ArrayList_Contains(newParents, inclusion->id)) {
+            if (ArrayList_Contains(&newParents, inclusion->id)) {
                 printf("inclusion loop found at %s\n", inclusion->path);
                 exit(EXIT_FAILURE);
             }
             if (!inclusion->built) {
-                printf("Inclusion: %s\n", inclusion->path);
-                _BuildFile(entries, inclusion, newParents, htmlInclusionRegex);
+                _BuildFile(entries, inclusion, &newParents, htmlInclusionRegex);
             }
             char builtIncluisonPath[128];
             _GetBuildPath(inclusion->path, builtIncluisonPath);
             FILE *inclusionFile = fopen(builtIncluisonPath, "r");
-            printf("builtInclusionPath: %s\n", builtIncluisonPath);
             assert(inclusionFile != NULL);
 
             char inclusionLine[1024];
             while ((fgets(inclusionLine, sizeof(inclusionLine), inclusionFile)) != NULL) {
-                printf("inclusionLine: %s\n", inclusionLine);
                 fputs(inclusionLine, destFile);
             }
             fclose(inclusionFile);
-            ArrayList_Destroy(newParents);
+            ArrayList_Destroy(&newParents);
         }
         fputs(p, destFile);
     }
 
     fclose(srcFile);
     fclose(destFile);
-    printf("build complete: %s\n", entry->path);
     entry->built = true;
 }
 
@@ -137,7 +124,6 @@ bool BuildOutput(htmlEntries *fileEntries) {
 
     size_t i = 0;
     htmlEntry *currentEntry;
-    printf("entryCount %lu\n", fileEntries->entryCount);
     while ((currentEntry = HtmlEntries_Iterate(fileEntries, &i)) != NULL) {
         if (currentEntry->built) {
             continue;
