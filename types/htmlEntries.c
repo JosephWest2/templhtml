@@ -6,12 +6,6 @@
 #include "htmlEntry.c"
 #include "../main.h"
 
-typedef struct htmlEntries {
-    htmlEntry *entries;
-    size_t entryCount;
-    size_t maxEntries;
-} htmlEntries;
-
 static void Grow(htmlEntries * entries) {
     entries->maxEntries *= 2;
     entries->entries = realloc(entries->entries, entries->maxEntries * sizeof(htmlEntry));

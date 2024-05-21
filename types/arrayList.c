@@ -1,19 +1,20 @@
 #include "arrayList.h"
 #include <stdlib.h>
 
-typedef struct ArrayList {
-    size_t *buffer;
-    size_t count;
-    size_t bufferLength;
-} ArrayList;
-
 static void _Grow(ArrayList *arr) {
     arr->bufferLength *= 2;
     arr->buffer = realloc(arr->buffer, arr->bufferLength * sizeof(size_t));
 }
 
-void ArrayList_Clone(const ArrayList *const src, ArrayList *dest) {
+void ArrayList_Destroy(ArrayList *arr) {
+    free(arr->buffer);
+}
 
+void ArrayList_CreateAndClone(const ArrayList *const src, ArrayList *dest) {
+    ArrayList_Create(dest, src->count + 10);
+    for (size_t i = 0; i < src->count; i++) {
+        dest->buffer[i] = src->buffer[i];
+    }
 }
 
 void ArrayList_Create(ArrayList *arr, size_t initialSize) {
