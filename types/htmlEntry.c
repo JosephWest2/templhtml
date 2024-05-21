@@ -1,7 +1,7 @@
 #include "htmlEntry.h"
 #include <string.h>
 
-void HtmlEntry_Init(htmlEntry *entry, char *path, char *fileName) {
+void HtmlEntry_Create(htmlEntry *entry, char *path, char *fileName) {
 
     static size_t id = 0;
 

@@ -1,4 +1,3 @@
-#include "GetHtmlEntries.h"
 #include <assert.h>
 #include <dirent.h>
 #include <regex.h>
@@ -6,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "GetHtmlEntries.h"
 
 bool IsRootDir(char *dir) { return strcmp(dir, ".") == 0 ? true : false; }
 
@@ -45,18 +45,17 @@ bool GetHtmlEntries(htmlEntries *entries, char *dirName) {
         bool isHTMLFile = regexec(&htmlRegex, entryName, 0, NULL, 0) == 0 ? true : false;
 
         if (isHTMLFile) {
-            htmlEntry *current = &entries->entries[entries->entryCount];
-            HtmlEntry_Init(current);
+            char fileName[128];
+            char path[128];
             if (IsRootDir(dirName)) {
-                strcpy(current->path, dirent->d_name);
+                strcpy(path, dirent->d_name);
             } else {
-                strcpy(current->path, dirName);
-                strcat(current->path, "/");
-                strcat(current->path, dirent->d_name);
+                strcpy(path, dirName);
+                strcat(path, "/");
+                strcat(path, dirent->d_name);
             }
-            strcpy(current->fileName, dirent->d_name);
-            entries->entryCount++;
-            current->inclusionCount++;
+            strcpy(fileName, dirent->d_name);
+            HtmlEntries_AddEntry(entries, path, fileName);
             continue;
         }
 

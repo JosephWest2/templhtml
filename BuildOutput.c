@@ -55,13 +55,17 @@ static char *_TrimWhitespace(char *s) {
 
 static void _BuildFile(htmlEntries *entries, htmlEntry *entry, ArrayList *parents, const regex_t *const htmlInclusionRegex) {
 
+    printf("funcCall: %s\n", entry->path);
+
     FILE *srcFile = fopen(entry->path, "r");
+    printf("path: %s\n", entry->path);
     assert(srcFile != NULL);
 
     char destPath[128];
     _GetBuildPath(entry->path, destPath);
     _BuildDirectory(destPath);
     FILE *destFile = fopen(destPath, "w");
+    printf("destPath: %s\n", destPath);
     assert(destFile != NULL);
 
     char line[1024];
@@ -77,7 +81,7 @@ static void _BuildFile(htmlEntries *entries, htmlEntry *entry, ArrayList *parent
             ArrayList_Append(newParents, entry->id);
 
             line[match[0].rm_so] = '\0';
-            line[match[0].rm_eo - 2] = '\0';
+            line[match[0].rm_eo - 1] = '\0';
             fputs(p, destFile);
             p += match[0].rm_eo;
 
@@ -97,6 +101,7 @@ static void _BuildFile(htmlEntries *entries, htmlEntry *entry, ArrayList *parent
                 exit(EXIT_FAILURE);
             }
             if (!inclusion->built) {
+                printf("Inclusion: %s\n", inclusion->path);
                 _BuildFile(entries, inclusion, newParents, htmlInclusionRegex);
             }
             char builtIncluisonPath[128];
@@ -113,6 +118,7 @@ static void _BuildFile(htmlEntries *entries, htmlEntry *entry, ArrayList *parent
         fputs(p, destFile);
     }
 
+    printf("build complete: %s\n", entry->path);
     entry->built = true;
 }
 
@@ -126,8 +132,11 @@ bool BuildOutput(htmlEntries *fileEntries) {
 
     size_t i = 0;
     htmlEntry *currentEntry;
+    printf("entryCount %lu\n", fileEntries->entryCount);
     while ((currentEntry = HtmlEntries_Iterate(fileEntries, &i)) != NULL) {
-
+        if (currentEntry->built) {
+            continue;
+        }
         ArrayList parents;
         ArrayList_Create(&parents, 10);
         _BuildFile(fileEntries, currentEntry, &parents, &htmlInclusionRegex);

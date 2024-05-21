@@ -9,4 +9,4 @@ typedef struct htmlEntry {
     bool built;
 } htmlEntry;
 
-void HtmlEntry_Init(htmlEntry *entry, char *path, char *fileName);
+void HtmlEntry_Create(htmlEntry *entry, char *path, char *fileName);

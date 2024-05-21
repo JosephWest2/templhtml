@@ -5,7 +5,7 @@
 typedef struct htmlEntries {
     htmlEntry *entries;
     size_t entryCount;
-    size_t maxEntries;
+    size_t bufferLength;
 } htmlEntries;
 
 void HtmlEntries_Init(htmlEntries *entries);

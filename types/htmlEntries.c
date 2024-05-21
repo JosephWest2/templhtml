@@ -3,18 +3,16 @@
 #include <stdio.h>
 #include "htmlEntries.h"
 #include "htmlEntry.h"
-#include "htmlEntry.c"
-#include "../main.h"
 
-static void Grow(htmlEntries * entries) {
-    entries->maxEntries *= 2;
-    entries->entries = realloc(entries->entries, entries->maxEntries * sizeof(htmlEntry));
+static void _Grow(htmlEntries * entries) {
+    entries->bufferLength *= 2;
+    entries->entries = realloc(entries->entries, entries->bufferLength * sizeof(htmlEntry));
 }
 
 void HtmlEntries_Init(htmlEntries * entries) {
     entries->entryCount = 0;
-    entries->maxEntries = 20;
-    entries = malloc(sizeof(htmlEntry) * entries->maxEntries);
+    entries->bufferLength = 20;
+    entries->entries = malloc(sizeof(htmlEntry) * entries->bufferLength);
 }
 
 void HtmlEntries_Cleanup(htmlEntries * entries) {
@@ -31,19 +29,17 @@ htmlEntry *GetAssociatedHtmlEntry(htmlEntries *entries, char *fileName) {
 }
 
 void HtmlEntries_AddEntry(htmlEntries *entries, char *path, char *fileName) {
-    if (entries->entryCount != entries->maxEntries) {
-        printf("Error, entry max exceeded");
-        exit(EXIT_FAILURE);
+    if (entries->entryCount >= entries->bufferLength) {
+        _Grow(entries);
     }
-    HtmlEntry_Init(&entries->entries[entries->entryCount], path, fileName);
+    HtmlEntry_Create(&entries->entries[entries->entryCount], path, fileName);
     entries->entryCount++;
 }
 
 htmlEntry *HtmlEntries_Iterate(htmlEntries *entries, size_t *i) {
-
-    if (*i < entries->entryCount && *i < entries->maxEntries) {
+    if (*i < entries->entryCount && *i < entries->bufferLength) {
         (*i)++;
-        return &entries->entries[*i];
+        return &entries->entries[*i - 1];
     }
     return NULL;
 }
