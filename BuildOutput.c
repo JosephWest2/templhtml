@@ -107,17 +107,22 @@ static void _BuildFile(htmlEntries *entries, htmlEntry *entry, ArrayList *parent
             char builtIncluisonPath[128];
             _GetBuildPath(inclusion->path, builtIncluisonPath);
             FILE *inclusionFile = fopen(builtIncluisonPath, "r");
+            printf("builtInclusionPath: %s\n", builtIncluisonPath);
             assert(inclusionFile != NULL);
 
             char inclusionLine[1024];
             while ((fgets(inclusionLine, sizeof(inclusionLine), inclusionFile)) != NULL) {
+                printf("inclusionLine: %s\n", inclusionLine);
                 fputs(inclusionLine, destFile);
             }
+            fclose(inclusionFile);
             ArrayList_Destroy(newParents);
         }
         fputs(p, destFile);
     }
 
+    fclose(srcFile);
+    fclose(destFile);
     printf("build complete: %s\n", entry->path);
     entry->built = true;
 }
